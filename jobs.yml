@@ -1,0 +1,213 @@
+#
+# Use this configuration with jenkins-job-builder:
+# https://github.com/openstack-infra/jenkins-job-builder
+#
+
+- project:
+    name: Ploneintranet
+    branch:
+        - master:
+            branch_spec: 'origin/master'
+            wipe-workspace: false
+        - 'all.branches.even.broken':
+            branch_spec: '**'
+            wipe-workspace: true
+    shall-block: true
+    block-regex: '^Plone Intranet complete.*'
+    test-args: ''
+    jobs:
+        - 'complete.{name}.{branch}.{wipe-workspace}'
+
+- project:
+    name: Ploneintranet.thorough
+    branch:
+        - master:
+            branch_spec: 'origin/master'
+    wipe-workspace: true
+    shall-block: false
+    block-regex: 'xxx'
+    test-args: '--all'
+    jobs:
+        - 'clean.{name}.{branch}.{wipe-workspace}'
+
+- project:
+    name: Ploneintranet.quicktests
+    package:
+        - ploneintranet.activitystream:
+            test-args: '-s ploneintranet.activitystream'
+        - ploneintranet.attachments:
+            test-args: '-s ploneintranet.attachments'
+        - ploneintranet.core:
+            test-args: '-s ploneintranet.core'
+        - ploneintranet.docconv:
+            test-args: '-s ploneintranet.docconv'
+        - ploneintranet.invitations:
+            test-args: '-s ploneintranet.invitations'
+        - ploneintranet.messaging:
+            test-args: '-s ploneintranet.messaging'
+        - ploneintranet.microblog:
+            test-args: '-s ploneintranet.microblog'
+        - ploneintranet.network:
+            test-args: '-s ploneintranet.network'
+        - ploneintranet.notifications:
+            test-args: '-s ploneintranet.notifications'
+        - ploneintranet.pagerank:
+            test-args: '-s ploneintranet.pagerank'
+        - ploneintranet.simplesharing:
+            test-args: '-s ploneintranet.simplesharing'
+#        - ploneintranet.socialtheme:
+#            test-args: '-s ploneintranet.socialtheme'
+#        - ploneintranet.theme:
+#            test-args: '-s ploneintranet.theme'
+        - ploneintranet.todo:
+            test-args: '-s ploneintranet.todo'
+        - ploneintranet.workspace:
+            test-args: '-s ploneintranet.workspace'
+    branch:
+        - master:
+            branch_spec: 'origin/master'
+            wipe-workspace: false 
+        - 'all.branches.even.broken':
+            branch_spec: '**'
+            wipe-workspace: true
+    shall-block: false
+    block-regex: 'xxx'
+    jobs:
+        - 'quick.{name}.{package}.{branch}'
+- project:
+    name: Ploneintranet.quicktests.robots
+    package:
+        - ploneintranet.socialsuite:
+            test-args: '-s ploneintranet.socialsuite'
+        - ploneintranet.suite:
+            test-args: '-s ploneintranet.suite'
+    branch:
+        - master:
+            branch_spec: 'origin/master'
+            wipe-workspace: false
+        - 'all.branches.even.broken':
+            branch_spec: '**'
+            wipe-workspace: true
+    shall-block: false
+    block-regex: 'xxx'
+    jobs:
+        - 'quick.robot.{name}.{package}.{branch}'
+
+- job-template: &job-template
+    name: 'generic'
+    project-type: freestyle
+    display-name: 'Generic'
+    concurrent: true
+    disabled: false
+    logrotate:
+        daysToKeep: 60
+        numToKeep: 100
+        artifactDaysToKeep: 3
+        artifactNumToKeep: 3
+
+    properties:
+        - github:
+            url: https://github.com/ploneintranet/ploneintranet
+        - build-blocker:
+            use-blocking-blocker: '{shall-block}'
+            blocking-jobs:
+                - "{block-regex}"
+    scm:
+        - git:
+           url: https://github.com/ploneintranet/ploneintranet.git
+           branches:
+               - '{branch_spec}'
+           wipe-workspace: '{wipe-workspace}'
+
+    builders:
+        - shell: |
+            #!/bin/bash
+            ./bootstrap_jenkins.sh || exit 1
+            PLONE_CSRF_DISABLED=true ./bin/jenkins-test {test-args}
+
+    publishers:
+        - cobertura:
+            report-file: "parts/test/coverage.xml"
+            only-stable: "false"
+            fail-no-reports: "false"
+            fail-unhealthy: "false"
+            fail-unstable: "false"
+            targets:
+                 - files:
+                     healthy: 800000
+                     unhealthy: 0
+                     failing: 0
+                 - method:
+                     healthy: 800000
+                     unhealthy: 0
+                     failing: 0
+
+        - junit:
+            results: parts/test/testreports/*.xml
+            keep-long-stdio: false
+
+        - github-notifier
+
+    wrappers:
+        - xvfb:
+            name: Xvfb
+            screen: 1200x900x24
+            timeout: 0
+        - port-allocator:
+            names:
+                - ZSERVER_PORT
+                - FTPSERVER_PORT
+
+- job-template:
+    name: 'quick.{name}.{package}.{branch}'
+    display-name: 'Plone Intranet {package} Quick test {branch}'
+    triggers:
+        - github
+        - github-pull-request
+    <<: *job-template
+
+- job-template:
+    name: 'quick.robot.{name}.{package}.{branch}'
+    display-name: 'Plone Intranet {package} Quick test {branch}'
+    triggers:
+        - github
+        - github-pull-request
+    publishers:
+        - custom-robot:
+    <<: *job-template
+
+- job-template:
+    name: 'complete.{name}.{branch}.{wipe-workspace}'
+    display-name: 'Plone Intranet complete {branch}'
+    triggers:
+        - github
+        - github-pull-request
+    publishers:
+        - custom-robot:
+    <<: *job-template
+
+- job-template:
+    name: 'clean.{name}.{branch}.{wipe-workspace}'
+    display-name: 'Plone Intranet clean {branch}'
+    triggers:
+        - timed: '@daily'
+
+    publishers:
+        - custom-robot:
+    <<: *job-template
+
+# Macros
+
+- publisher:
+    name: custom-robot
+    publishers:
+        - robot:
+            output-path: parts/test
+            report-html: robot_rebort.html
+            log-html: robot_log.html
+            output-xml: robot_output.xml
+            pass-threshold: 100.0
+            unstable-threshold: 80.0
+            only-critical: true
+            other-files:
+                - robot_*.png
